@@ -15,7 +15,7 @@ namespace RebusPeekAndReturn.Tests
             var r = new AzureServicebusPeekAndReturn("vegard-z230-queue-error", cn, null);
             var peeked = await r.Peek(1000);
             //Return to source-queue - Fail if not found
-            await r.Move(from m in peeked
+            await r.Handle(from m in peeked
                 select
                     new MessageToMove()
                     {

@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using Microsoft.ServiceBus;
+using Microsoft.ServiceBus.Messaging;
 
 namespace RebusPeekAndReturn
 {
@@ -7,7 +7,7 @@ namespace RebusPeekAndReturn
     {
         public string MessageId { get; set; }
         public string Body { get; set; }
-        public Dictionary<string,object> Headers { get; set; }
+        public Dictionary<string,string> Headers { get; set; }
     }
 }
     

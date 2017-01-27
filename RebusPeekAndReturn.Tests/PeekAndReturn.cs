@@ -35,6 +35,7 @@ namespace RebusPeekAndReturn.Tests
                 Manager.DeleteQueue(queue);
             Manager.CreateQueue(queue);
         }
+
         [Test]
         public async void PeekAndForwardAllMessages()
         {
@@ -52,9 +53,9 @@ namespace RebusPeekAndReturn.Tests
             var peeked = await r.Peek(1000);
             peeked.Count.ShouldBe(2);
 
-            await r.Move((from m in peeked select new MessageToMove() { MessageId = m.MessageId, DestionationQueue = Settings.To }), Settings.DefaultTo);
-            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCount;
-            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCount;
+            await r.Handle((from m in peeked select new MessageToMove() { MessageId = m.MessageId, DestionationQueue = Settings.To }), Settings.From);
+            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCountDetails.ActiveMessageCount;
+            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCountDetails.ActiveMessageCount;
 
             destinationQueueCount.ShouldBe(2);
             sourceQueueCount.ShouldBe(0);
@@ -77,17 +78,13 @@ namespace RebusPeekAndReturn.Tests
             var peeked = await r.Peek(1);
             peeked.Count.ShouldBe(1);
 
-            await r.Move((from m in peeked select new MessageToMove() { MessageId = m.MessageId, DestionationQueue = Settings.To }),Settings.DefaultTo);
-            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCount;
-            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCount;
-            var defaultToQueueCount = Manager.GetQueue(Settings.DefaultTo).MessageCount;
+            await r.Handle((from m in peeked select new MessageToMove() { MessageId = m.MessageId, DestionationQueue = Settings.To }), Settings.From);
+            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCountDetails.ActiveMessageCount;
+            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCountDetails.ActiveMessageCount;
 
             destinationQueueCount.ShouldBe(1);
-            sourceQueueCount.ShouldBe(0);
-            defaultToQueueCount.ShouldBe(1);
+            sourceQueueCount.ShouldBe(1);
         }
-
-
 
         [Test]
         public async void PeekAndDeleteAllMessages()
@@ -106,12 +103,59 @@ namespace RebusPeekAndReturn.Tests
             var peeked = await r.Peek(1000);
             peeked.Count.ShouldBe(2);
 
-            await r.Move((from m in peeked select new MessageToMove() { Delete = true,MessageId = m.MessageId, DestionationQueue = string.Empty }), string.Empty);
-            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCount;
-            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCount;
+            await r.Handle((from m in peeked select new MessageToMove() { Delete = true, MessageId = m.MessageId, DestionationQueue = string.Empty }), Settings.From);
+            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCountDetails.ActiveMessageCount;
+            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCountDetails.ActiveMessageCount;
 
             destinationQueueCount.ShouldBe(0);
             sourceQueueCount.ShouldBe(0);
+        }
+
+        [Test]
+        public async void PeekAndForwardSomeToTwoDifferentQueues()
+        {
+            var bus = GetBus();
+
+            await bus.Advanced.Routing.Send(Settings.From,
+                new SimpleRebusMessage() { Body = "#1 The body med æ og ø og å", SendtDateTime = DateTime.UtcNow });
+
+            await bus.Advanced.Routing.Send(Settings.From,
+                new SimpleRebusMessage() { Body = "#2 The body med æ og ø og å", SendtDateTime = DateTime.UtcNow });
+
+            await bus.Advanced.Routing.Send(Settings.From,
+                new SimpleRebusMessage() { Body = "#3 The body med æ og ø og å", SendtDateTime = DateTime.UtcNow });
+
+            await bus.Advanced.Routing.Send(Settings.From,
+                new SimpleRebusMessage() { Body = "#4 The body med æ og ø og å", SendtDateTime = DateTime.UtcNow });
+
+            await bus.Advanced.Routing.Send(Settings.From,
+                new SimpleRebusMessage() { Body = "#5 The body med æ og ø og å", SendtDateTime = DateTime.UtcNow });
+
+            var r = new AzureServicebusPeekAndReturn(Settings.From, Settings.AsbConnectionString, EncryptionKey);
+            var peeked = await r.Peek(1000);
+            peeked.Count.ShouldBe(5);
+
+            var first = peeked[0];
+            var second = peeked[1];
+            var third = peeked[2];
+            var fourth = peeked[3];
+            var fifth = peeked[4];
+
+            await r.Handle(new[]
+            {
+                new MessageToMove() {DestionationQueue = Settings.To,MessageId = first.MessageId},
+                new MessageToMove() {DestionationQueue = Settings.DefaultTo,MessageId = second.MessageId},
+                new MessageToMove() {DestionationQueue = Settings.DefaultTo,MessageId = fourth.MessageId},
+                //new MessageToMove() {ReturnToSource = true,MessageId = fifth.MessageId}
+            }, Settings.From);
+
+            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCountDetails.ActiveMessageCount;
+            var destinationQueueCount2 = Manager.GetQueue(Settings.DefaultTo).MessageCountDetails.ActiveMessageCount;
+            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCountDetails.ActiveMessageCount;
+
+            destinationQueueCount.ShouldBe(1);
+            destinationQueueCount2.ShouldBe(2);
+            sourceQueueCount.ShouldBe(2);
         }
 
         [Test]
@@ -132,31 +176,28 @@ namespace RebusPeekAndReturn.Tests
             peeked.Count.ShouldBe(2);
             var first = peeked.First();
             var last = peeked.Last();
-            await r.Move(new[]
+            await r.Handle(new[]
             {
                 new MessageToMove() {Delete = false,DestionationQueue = Settings.To,MessageId = first.MessageId,ReturnToSource = false},
                 new MessageToMove() {Delete = false,DestionationQueue = Settings.DefaultTo,MessageId = last.MessageId,ReturnToSource = false}
-            } , Settings.DefaultTo);
+            }, Settings.From);
 
-            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCount;
-            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCount;
-            var defaulTotQueueCount = Manager.GetQueue(Settings.DefaultTo).MessageCount;
+            var destinationQueueCount = Manager.GetQueue(Settings.To).MessageCountDetails.ActiveMessageCount;
+            var destinationQueueCount2 = Manager.GetQueue(Settings.DefaultTo).MessageCountDetails.ActiveMessageCount;
+            var sourceQueueCount = Manager.GetQueue(Settings.From).MessageCountDetails.ActiveMessageCount;
 
             destinationQueueCount.ShouldBe(1);
+            destinationQueueCount2.ShouldBe(1);
             sourceQueueCount.ShouldBe(0);
-            defaulTotQueueCount.ShouldBe(1);
         }
-
 
         [Test]
         public async void TestPeekAndReturn()
         {
-
             var bus = GetBus();
 
             await bus.Advanced.Routing.Send(Settings.From,
                 new SimpleRebusMessage() { Body = "#1 The body med æ og ø og å", SendtDateTime = DateTime.UtcNow });
-
 
             await bus.Advanced.Routing.Send(Settings.From,
                 new SimpleRebusMessage() { Body = "#2 The body med æ og ø og å", SendtDateTime = DateTime.UtcNow });
@@ -167,7 +208,6 @@ namespace RebusPeekAndReturn.Tests
             await bus.Advanced.Routing.Send(Settings.From,
                new SimpleRebusMessage() { Body = LargeMessageBody, SendtDateTime = DateTime.UtcNow });
 
-
             var r = new AzureServicebusPeekAndReturn(Settings.From, Settings.AsbConnectionString, EncryptionKey);
             var messages = await r.Peek(1000);
             messages.Count.ShouldBe(4);
@@ -175,12 +215,10 @@ namespace RebusPeekAndReturn.Tests
             Console.WriteLine("");
             messages.ForEach(m => Console.WriteLine(JsonConvert.SerializeObject(m)));
             //   await r.Move(messages.Select(m => new MessageToMove() {MessageId = m.MessageId, Delete = true}));
-
         }
 
         private static IBus GetBus()
         {
-
             var adapter = new Rebus.Activation.BuiltinHandlerActivator();
             var bus = Configure.With(adapter)
                 .Logging(l => l.ColoredConsole())
