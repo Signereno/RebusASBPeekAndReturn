@@ -143,13 +143,12 @@ namespace RebusPeekAndReturn
             return transportMessages;
         }
 
-        public async Task<List<PeekedMessage>> PeekPaged(int pageSize, string messageState = null, int pageSkip = 0)
+        public async Task<PeekedMessagePage> PeekPaged(int pageSize, string messageState = null, long sequenceNumber = 0)
         {
             var client = QueueClient.CreateFromConnectionString(_asbConnectionString, _sourceQueue, ReceiveMode.PeekLock);
 
             List<BrokeredMessage> brokeredMessages = new List<BrokeredMessage>();
             long i = 0;
-            long sequenceNumber = 0;
             while (i < pageSize)
             {
                 IEnumerable<BrokeredMessage> peekBatchBrokeredMessages = (await client.PeekBatchAsync(sequenceNumber, pageSize)).ToList();
@@ -215,7 +214,11 @@ namespace RebusPeekAndReturn
                     // ignored, prevent from crashing 
                 }
             }
-            return transportMessages;
+            return new PeekedMessagePage()
+            {
+                Messages = transportMessages,
+                NextSequenceNumber = sequenceNumber
+            };
         }
 
         private byte[] GetEncryptedBody(byte[] bodyContent, string iv)
