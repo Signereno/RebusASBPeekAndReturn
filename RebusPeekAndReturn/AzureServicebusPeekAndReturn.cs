@@ -154,7 +154,10 @@ namespace RebusPeekAndReturn
             {
                 temp = (await client.PeekBatchAsync(sequenceNumber, pageSize)).ToList();
                 brokeredMessages.AddRange(temp);
-                sequenceNumber = temp.LastOrDefault()?.SequenceNumber ?? sequenceNumber;
+                sequenceNumber = temp.LastOrDefault()?.SequenceNumber ?? long.MinValue;
+                if (sequenceNumber == long.MinValue)
+                    break;
+                sequenceNumber += 1;
             } while (temp.Count > 0 && brokeredMessages.Count <= pageSize);
             
             if (brokeredMessages.Count == 0)
