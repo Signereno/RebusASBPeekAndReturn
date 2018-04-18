@@ -81,15 +81,15 @@ namespace RebusPeekAndReturn
         {
             while (true)
             {
-                using (var transactionContext = new DefaultTransactionContext())
+                using (var transactionContext = AmbientTransactionContext.Current)
                 {
                     var transportMessage = await _transport.Receive(transactionContext, new CancellationTokenSource().Token);
 
                     if (!MessagesToHandle.Any() || transportMessage == null) break;
 
                     await HandleMessage(transportMessage, transactionContext);
-                    
-                    await transactionContext.Complete();
+
+                    await transactionContext.Commit();
                 }
             }
         }
