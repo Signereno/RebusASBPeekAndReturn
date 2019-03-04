@@ -75,13 +75,17 @@ namespace RebusPeekAndReturn
             var client = QueueClient.CreateFromConnectionString(_asbConnectionString, _sourceQueue);
 
             List<BrokeredMessage> brokeredMessages = new List<BrokeredMessage>();
+            List<BrokeredMessage> currentBatch = null;
             long i = 0;
-            while (i < count)
+            do
             {
-                IEnumerable<BrokeredMessage> peekBatchBrokeredMessages = await client.PeekBatchAsync(count);
-                brokeredMessages.AddRange(peekBatchBrokeredMessages);
-                i = i + peekBatchBrokeredMessages.Count();
-            }
+                currentBatch = (await client.PeekBatchAsync(count))?.ToList();
+                if (currentBatch?.Count > 0)
+                {
+                    brokeredMessages.AddRange(currentBatch);
+                    i = i + currentBatch.Count;
+                }
+            } while (i < count && currentBatch?.Count > 0);
 
             var transportMessages = new List<PeekedMessage>();
             foreach (var brokeredMessage in brokeredMessages)
